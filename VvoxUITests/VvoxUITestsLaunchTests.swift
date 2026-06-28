@@ -10,7 +10,11 @@ import XCTest
 final class VvoxUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        // Keep `false` so the launch test runs once in the current system
+        // appearance instead of flipping between Light and Dark variants
+        // every run — which was inadvertently overriding the user's
+        // system-wide Auto appearance setting.
+        false
     }
 
     override func setUpWithError() throws {
