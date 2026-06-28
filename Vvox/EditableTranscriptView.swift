@@ -46,6 +46,9 @@ struct EditableTranscriptView: NSViewRepresentable {
         textView.editGatewayHandler = { [weak coordinator = context.coordinator] in
             coordinator?.handleEditGateway()
         }
+        textView.getCommittedEndHandler = { [weak coordinator = context.coordinator] in
+            coordinator?.committedLength ?? 0
+        }
 
         context.coordinator.textView = textView
         context.coordinator.lastResetSignal = resetSignal
@@ -81,7 +84,7 @@ struct EditableTranscriptView: NSViewRepresentable {
 
         // The committed region lives at [0, committedLength). The volatile
         // tail lives at [committedLength, committedLength + volatileLength).
-        private var committedLength: Int = 0
+        private(set) var committedLength: Int = 0
         private var volatileLength: Int = 0
 
         // The engine.committedText string we last appended FROM. Used to
@@ -114,6 +117,14 @@ struct EditableTranscriptView: NSViewRepresentable {
 
             let currentCommittedString = String(committed.characters)
 
+            // The one rule: on any commit (committed text changed this tick —
+            // engine emitted an isFinal result), yank the caret to the end of
+            // the entire textStorage. Equivalent to firing ⌘↓ in the box.
+            // Safe because the engine clears volatile to "" in the same
+            // MainActor.run block as it appends to committed, so at the
+            // instant we'd be jumping, end-of-storage == end-of-committed.
+            let shouldSnapToEnd = currentCommittedString != lastSyncedCommittedString
+
             // Detect engine reset (clearTranscript or new session): if the
             // current committed string no longer extends what we last saw,
             // wipe and start over from the new state.
@@ -125,7 +136,9 @@ struct EditableTranscriptView: NSViewRepresentable {
             }
 
             // Append committed delta at the end of the committed region
-            // (before the volatile tail).
+            // (before the volatile tail). Storage-layout concern only —
+            // keeps the volatile region at the trailing end of storage so
+            // the next replaceCharacters range stays correct.
             if currentCommittedString.count > lastSyncedCommittedString.count {
                 let delta = String(currentCommittedString[lastSyncedCommittedString.endIndex...])
                 let attrs: [NSAttributedString.Key: Any] = [
@@ -154,36 +167,33 @@ struct EditableTranscriptView: NSViewRepresentable {
             let currentVolatileRange = NSRange(location: committedLength, length: volatileLength)
             storage.replaceCharacters(in: currentVolatileRange, with: attrVolatile)
             volatileLength = attrVolatile.length
+
+            if shouldSnapToEnd {
+                textView.setSelectedRange(NSRange(location: storage.length, length: 0))
+            }
         }
 
         // MARK: NSTextViewDelegate
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
-            // Reject any edit that extends INTO the volatile tail. Insertions
-            // at the volatile boundary (length 0 at committedLength) are
-            // allowed — they push the volatile range rightward.
-            let volatileStart = committedLength
+            // Reject any edit that extends INTO the volatile tail. The boundary
+            // is computed dynamically as storage.length - volatileLength
+            // because `volatileLength` is only mutated by applyState, while
+            // storage.length reflects the current state including any in-flight
+            // user keystroke. Using a tracked `committedLength` here was a
+            // stale-data bug source (the FOX-reorder symptom).
+            let volatileStart = max(0, (textView.textStorage?.length ?? 0) - volatileLength)
             if NSMaxRange(affectedCharRange) > volatileStart { return false }
             // Surface the user's intent so the engine can finalize.
             onEditGateway()
             return true
         }
 
-        func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue], toCharacterRanges newSelectedCharRanges: [NSValue]) -> [NSValue] {
-            // Clamp selection so it can't extend into the volatile tail.
-            let volatileStart = committedLength
-            return newSelectedCharRanges.map { value in
-                let range = value.rangeValue
-                let clampedStart = min(range.location, volatileStart)
-                let clampedEnd = min(NSMaxRange(range), volatileStart)
-                return NSValue(range: NSRange(location: clampedStart, length: max(0, clampedEnd - clampedStart)))
-            }
-        }
-
         func textDidChange(_ notification: Notification) {
             guard let textView, let storage = textView.textStorage else { return }
-            // After a user edit in the committed region, volatile is still at
-            // the trailing end. Recompute committedLength from storage length.
+            // Keep our tracked committedLength in sync with storage for the
+            // internal callers (delta-insert position in applyState, etc.).
+            // Not used for caret management anymore — that's all storage.length.
             committedLength = max(0, storage.length - volatileLength)
         }
     }
@@ -194,6 +204,7 @@ struct EditableTranscriptView: NSViewRepresentable {
 final class VvoxEditableTextView: NSTextView {
 
     var editGatewayHandler: (() -> Void)?
+    var getCommittedEndHandler: (() -> Int)?
 
     override func doCommand(by selector: Selector) {
         switch selector {

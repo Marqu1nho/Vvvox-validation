@@ -284,27 +284,59 @@ private struct ArrowKeyFinalizeMonitor: NSViewRepresentable {
         deinit { uninstall() }
 
         private func handle(event: NSEvent) -> NSEvent? {
-            // 123 ←, 124 →, 125 ↓, 126 ↑
+            // 123 ←, 124 →, 125 ↓, 126 ↑, 51 backspace
             switch event.keyCode {
-            case 123, 124, 125, 126:
+            case 123, 124, 125, 126, 51:
                 break
             default:
                 return event
             }
 
-            // Skip if a text field / text view is currently editing.
-            if let window = referenceView?.window ?? NSApp.keyWindow,
-               isEditingText(in: window) {
+            guard let window = referenceView?.window ?? NSApp.keyWindow else {
                 return event
             }
 
-            guard isEnabled() else { return event }
+            // If a text view is already editing, let it handle the keystroke.
+            // For our editable transcript that means `doCommand(by:)` does
+            // the selection-extension / word-delete remap; the edit gateway
+            // inside the text view triggers the finalize via the coordinator.
+            // For other text fields (e.g. contextual-strings editor), just
+            // pass the keystroke through untouched.
+            if isEditingText(in: window) {
+                return event
+            }
 
-            DispatchQueue.main.async { self.onArrowKey() }
+            // No text view has focus.
+            if isEnabled() {
+                DispatchQueue.main.async { self.onArrowKey() }
+            }
 
-            // ALWAYS return the event — never consume. The user might still
-            // want arrow keys to navigate the transcript / move the cursor.
+            // Hand the keystroke to the editable transcript: focus it,
+            // park the caret at end-of-committed (so the arrow / backspace
+            // acts on the last finalized text), then re-post the event so
+            // the text view receives it as first responder.
+            if let textView = findVvoxEditableTextView(in: window) {
+                window.makeFirstResponder(textView)
+                if let end = textView.getCommittedEndHandler?() {
+                    textView.setSelectedRange(NSRange(location: end, length: 0))
+                }
+                DispatchQueue.main.async {
+                    NSApp.postEvent(event, atStart: false)
+                }
+                return nil
+            }
+
             return event
+        }
+
+        private func findVvoxEditableTextView(in window: NSWindow) -> VvoxEditableTextView? {
+            var queue: [NSView] = window.contentView.map { [$0] } ?? []
+            while !queue.isEmpty {
+                let view = queue.removeFirst()
+                if let tv = view as? VvoxEditableTextView { return tv }
+                queue.append(contentsOf: view.subviews)
+            }
+            return nil
         }
 
         private func isEditingText(in window: NSWindow) -> Bool {
