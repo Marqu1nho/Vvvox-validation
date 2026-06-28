@@ -40,6 +40,11 @@ struct ContentView: View {
                 onArrowKey: { Task { await engine.finalizeNow() } }
             )
         }
+        .background {
+            DictationToggleHotkeyMonitor(
+                onToggle: { Task { await toggleDictation() } }
+            )
+        }
         .task {
             await engine.loadLocales()
             engine.vocabStore = vocabStore
@@ -59,6 +64,14 @@ struct ContentView: View {
     private func pushToTalkRelease() async {
         if engine.state == .listening {
             await engine.stopListening()
+        }
+    }
+
+    private func toggleDictation() async {
+        if engine.state == .listening {
+            await engine.stopListening()
+        } else {
+            await engine.startListening()
         }
     }
 
@@ -96,8 +109,8 @@ struct ContentView: View {
             .disabled(engine.state == .stopping || engine.state == .preparingAssets || engine.state == .downloading || engine.state == .requestingPermission)
             .keyboardShortcut(.return, modifiers: [.command])
             .help(engine.state == .listening
-                  ? "Stop listening and finalize the current transcription. (⌘↩)"
-                  : "Start listening on the microphone and begin live transcription. (⌘↩, or hold Space)")
+                  ? "Stop listening and finalize the current transcription. (⌘↩ or ⌘⌥V)"
+                  : "Start listening on the microphone and begin live transcription. (⌘↩ or ⌘⌥V — Space also works while no text field is focused)")
 
             Button {
                 engine.clearTranscript()
@@ -305,6 +318,70 @@ private struct ArrowKeyFinalizeMonitor: NSViewRepresentable {
                 responder = r.nextResponder
             }
             return false
+        }
+    }
+}
+
+// MARK: - Dictation toggle hotkey (⌘⌥V)
+
+/// Installs a process-local NSEvent monitor that toggles dictation start/stop
+/// when the user presses ⌘⌥V. Works regardless of whether a text field has
+/// focus (modifier-key combo doesn't conflict with literal typing). For PR1
+/// this is window-local; PR2 will promote to a global hotkey for the HUD.
+private struct DictationToggleHotkeyMonitor: NSViewRepresentable {
+
+    var onToggle: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onToggle: onToggle)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onToggle = onToggle
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator {
+        var onToggle: () -> Void
+        private var monitor: Any?
+
+        init(onToggle: @escaping () -> Void) {
+            self.onToggle = onToggle
+        }
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handle(event: event) ?? event
+            }
+        }
+
+        func uninstall() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+
+        deinit { uninstall() }
+
+        private func handle(event: NSEvent) -> NSEvent? {
+            // 9 == kVK_ANSI_V
+            guard event.keyCode == 9 else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods == [.command, .option] else { return event }
+            if event.isARepeat { return nil }
+            DispatchQueue.main.async { self.onToggle() }
+            // Consume — don't let the V character leak into any text view.
+            return nil
         }
     }
 }
@@ -556,6 +633,8 @@ private struct TranscriptPanel: View {
 
     let engine: DictationEngine
 
+    @State private var transcriptResetSignal = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             transcriptHeader
@@ -579,10 +658,10 @@ private struct TranscriptPanel: View {
                 .symbolEffect(.pulse, isActive: engine.state == .listening)
             Text(engine.state.label).font(.headline)
             Spacer()
-            Text("Hold ␣ to talk, or ⌘↩ to toggle")
+            Text("⌘⌥V or ⌘↩ to toggle (Space while no field focused)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .help("Press and hold the spacebar to record; release to stop. Or press ⌘↩ to toggle. Holding space won't trigger while you're editing the contextual-strings field.")
+                .help("Press ⌘⌥V or ⌘↩ to toggle dictation. Spacebar push-to-talk works only when no text field has focus.")
             volatileRangeView
         }
         .padding(.horizontal)
@@ -608,22 +687,37 @@ private struct TranscriptPanel: View {
             HStack {
                 Text("Live transcript").font(.title3.bold())
                 Spacer()
+                Button {
+                    transcriptResetSignal &+= 1
+                } label: {
+                    Label("Reset to streaming", systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .help("Discard your edits and re-mirror the engine's committed text. Use this if you've made local edits you want to throw away.")
                 legend
             }
-            LiveTranscriptView(committed: engine.committedText, volatile: engine.volatileText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            EditableTranscriptView(
+                committed: engine.committedText,
+                volatile: engine.volatileText,
+                onEditGateway: { Task { await engine.finalizeNow() } },
+                resetSignal: transcriptResetSignal
+            )
+            .frame(minHeight: 160, maxHeight: 360)
+            .background(Color.secondary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 
     private var legend: some View {
         HStack(spacing: 12) {
-            Label("committed", systemImage: "checkmark.seal")
+            Label("committed (editable)", systemImage: "pencil")
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(.primary)
                 .font(.caption)
             Label("volatile", systemImage: "waveform")
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.secondary)
                 .font(.caption)
         }
     }
@@ -714,39 +808,6 @@ private struct ResultEventRow: View {
             .background(color.opacity(0.2))
             .foregroundStyle(color)
             .clipShape(Capsule())
-    }
-}
-
-// MARK: - Live transcript view
-
-private struct LiveTranscriptView: View {
-
-    let committed: AttributedString
-    let volatile: AttributedString
-
-    var body: some View {
-        let combined: AttributedString = {
-            var result = committed
-            var tail = volatile
-            // Mark the volatile tail visually.
-            if !tail.characters.isEmpty {
-                tail.foregroundColor = .orange
-                tail.backgroundColor = .orange.opacity(0.12)
-                if !result.characters.isEmpty {
-                    result += AttributedString(" ")
-                }
-                result += tail
-            }
-            return result
-        }()
-
-        Text(combined.characters.isEmpty ? AttributedString("(awaiting audio)") : combined)
-            .font(.system(.title3, design: .default))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(Color.secondary.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
