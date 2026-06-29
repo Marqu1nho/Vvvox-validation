@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		B756D11C2FF0B79F00BD0577 /* VocabContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B756D11B2FF0B79F00BD0577 /* VocabContext.swift */; };
 		B756D11E2FF0B7D900BD0577 /* ContextEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B756D11D2FF0B7D900BD0577 /* ContextEditorSheet.swift */; };
+		B7ECCBB32FF1EDDE00DD9357 /* HUDMock_LiquidGlassInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7ECCBB22FF1EDDE00DD9357 /* HUDMock_LiquidGlassInline.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +35,7 @@
 		B7C3ACE02FF07829005CF211 /* Vvox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vvox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7C3ACED2FF0782B005CF211 /* VvoxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VvoxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7C3ACF72FF0782B005CF211 /* VvoxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VvoxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B7ECCBB22FF1EDDE00DD9357 /* HUDMock_LiquidGlassInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDMock_LiquidGlassInline.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -82,6 +84,7 @@
 		B7C3ACD72FF07829005CF211 = {
 			isa = PBXGroup;
 			children = (
+				B7ECCBA72FF1DC3400DD9357 /* _design_mockups */,
 				B7C3ACE22FF07829005CF211 /* Vvox */,
 				B7C3ACF02FF0782B005CF211 /* VvoxTests */,
 				B7C3ACFA2FF0782B005CF211 /* VvoxUITests */,
@@ -99,6 +102,14 @@
 				B7C3ACF72FF0782B005CF211 /* VvoxUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B7ECCBA72FF1DC3400DD9357 /* _design_mockups */ = {
+			isa = PBXGroup;
+			children = (
+				B7ECCBB22FF1EDDE00DD9357 /* HUDMock_LiquidGlassInline.swift */,
+			);
+			path = _design_mockups;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -245,6 +256,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7ECCBB32FF1EDDE00DD9357 /* HUDMock_LiquidGlassInline.swift in Sources */,
 				B756D11C2FF0B79F00BD0577 /* VocabContext.swift in Sources */,
 				B756D11E2FF0B7D900BD0577 /* ContextEditorSheet.swift in Sources */,
 			);
