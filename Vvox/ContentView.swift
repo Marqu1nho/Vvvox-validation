@@ -11,6 +11,8 @@ struct ContentView: View {
 
     @State private var engine = DictationEngine()
     @State private var vocabStore = VocabContextStore()
+    @State private var hudMetrics = HUDMetricsProvider()
+    @State private var hudController: HUDPanelController?
     @Environment(\.openURL) private var openURL
 
     private static let docsURL = URL(string: "https://developer.apple.com/documentation/speech/dictationtranscriber")!
@@ -48,6 +50,9 @@ struct ContentView: View {
         .task {
             await engine.loadLocales()
             engine.vocabStore = vocabStore
+            if hudController == nil {
+                hudController = HUDPanelController(engine: engine, metrics: hudMetrics)
+            }
         }
     }
 
@@ -119,6 +124,13 @@ struct ContentView: View {
             }
             .disabled(engine.state == .listening)
             .help("Clear the live transcript and the result event log. Disabled while listening.")
+
+            Button {
+                hudController?.toggle()
+            } label: {
+                Label("HUD", systemImage: "rectangle.on.rectangle")
+            }
+            .help("Show/hide the floating HUD scratchpad. PR2a: summon from this button. PR2b will add global ⌃⌥V activation and AX-anchored positioning.")
         }
     }
 }
