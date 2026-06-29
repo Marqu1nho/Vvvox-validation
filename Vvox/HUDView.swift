@@ -109,6 +109,7 @@ struct HUDView: View {
             )
             .glassEffectID("hud.surface", in: glassNamespace)
         }
+        .opacity(0.92)
     }
 
     // MARK: Header

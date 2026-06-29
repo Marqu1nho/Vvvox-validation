@@ -50,10 +50,10 @@ final class HUDPanelController {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(
             x: screenFrame.midX - initialSize.width / 2,
-            y: screenFrame.maxY - initialSize.height - 80
+            y: screenFrame.maxY - initialSize.height - 12
         )
 
-        let p = NSPanel(
+        let p = KeyableHUDPanel(
             contentRect: NSRect(origin: origin, size: initialSize),
             styleMask: [.nonactivatingPanel, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -66,9 +66,11 @@ final class HUDPanelController {
         p.isOpaque = false
         p.hasShadow = true
         p.hidesOnDeactivate = false
-        // Only become key when something inside needs typing (e.g. the
-        // editable transcript or the inline N-days field). Prevents the
-        // chrome from stealing focus on mere clicks.
+        // Borderless panels return false from canBecomeKey by default, which
+        // blocks the editable transcript from receiving keystrokes.
+        // KeyableHUDPanel overrides this. becomesKeyOnlyIfNeeded keeps the
+        // chrome from grabbing focus until a control inside (text view /
+        // N-days TextField) actually needs it.
         p.becomesKeyOnlyIfNeeded = true
         p.worksWhenModal = false
         p.minSize = NSSize(width: 360, height: 180)
@@ -80,4 +82,14 @@ final class HUDPanelController {
         self.panel = p
         return p
     }
+}
+
+// MARK: - Keyable panel
+
+/// NSPanel subclass that returns true from canBecomeKey. Without this,
+/// borderless panels won't accept keystrokes — the editable transcript
+/// inside the HUD would be read-only.
+private final class KeyableHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
